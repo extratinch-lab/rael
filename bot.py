@@ -470,3 +470,27 @@ def main():
         states={
             JOURNAL_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, journal_title)],
             JOURNAL_BODY: [MessageHandler(filters.TEXT & ~filters.COMMAND, journal_body)],
+            JOURNAL_TAG: [CallbackQueryHandler(journal_tag, pattern="^tag:")],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    ))
+    app.add_handler(ConversationHandler(
+        entry_points=[CommandHandler("quiz", quiz_cmd)],
+        states={
+            QUIZ_ANSWER: [MessageHandler(filters.TEXT & ~filters.COMMAND, quiz_answer)],
+            QUIZ_GUESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, quiz_guess)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    ))
+    app.add_handler(ConversationHandler(
+        entry_points=[CallbackQueryHandler(goalwho_callback, pattern="^goalwho:")],
+        states={
+            GOAL_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, goal_text_handler)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    ))
+    print("Ra'El bot is running...")
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+if __name__ == "__main__":
+    main()
