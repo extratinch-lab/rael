@@ -4,8 +4,8 @@ from datetime import datetime, date
 import pytz
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler,
-    MessageHandler, filters, ContextTypes, ConversationHandler
+    Updater, CommandHandler, CallbackQueryHandler,
+    MessageHandler, Filters, CallbackContext, ConversationHandler
 )
 from supabase import create_client, Client
 
@@ -37,7 +37,7 @@ QUESTIONS = {
     ],
     "Deep Talks": [
         "What's one moment from our relationship you'd relive if you could?",
-        "What does home feel like to you — is it a place or a person?",
+        "What does home feel like to you - is it a place or a person?",
         "When do you feel most loved by me?",
         "What's a fear you have about our future that you've been holding onto?",
         "If you could change one thing about how we communicate, what would it be?",
@@ -48,7 +48,7 @@ QUESTIONS = {
         "What does your dream Sunday morning with me look like?",
     ],
     "Hot Takes": [
-        "Long distance makes a relationship stronger — agree or disagree?",
+        "Long distance makes a relationship stronger - agree or disagree?",
         "The person who loves more in a relationship is always at a disadvantage.",
         "Jealousy is a sign of love, not insecurity.",
         "You should be able to share your phone password with your partner without hesitation.",
@@ -57,7 +57,7 @@ QUESTIONS = {
         "You should never go to sleep angry at each other.",
         "You can truly love someone and still not be right for them.",
         "Surprises and grand gestures matter more than everyday consistency.",
-        "Love languages are overrated — actions are all that matter.",
+        "Love languages are overrated - actions are all that matter.",
     ],
     "Silly and Playful": [
         "If we were a dish, what would we be and why?",
@@ -67,7 +67,7 @@ QUESTIONS = {
         "If you had to describe me using only three emojis, which ones?",
         "What's the most chaotic thing we could do together on a random Tuesday?",
         "If we had a couples nickname that strangers gave us, what would it be?",
-        "What fictional couple are we most like — and is that a good thing?",
+        "What fictional couple are we most like - and is that a good thing?",
         "If I were a scent, what would I smell like?",
         "What's one random thing you want us to do together before the year ends?",
     ],
@@ -77,7 +77,7 @@ QUESTIONS = {
         "What kind of parents do you think we'd be?",
         "If money was no issue, what would our life look like?",
         "What's something on your bucket list you want to do with me specifically?",
-        "Is there a version of success that scares you — even if it's good?",
+        "Is there a version of success that scares you - even if it's good?",
         "What's one thing you hope never changes between us?",
         "If we could spend one year anywhere in the world just the two of us, where and why?",
         "What do you think our biggest strength as a team is?",
@@ -144,53 +144,57 @@ def db_get_data(table, key):
     row = db_get(table, key)
     return row["data"] if row else None
 
-async def start(update, ctx):
+def start(update: Update, context: CallbackContext):
     username = update.effective_user.username or ""
     w = who(username)
     name = display_name(w) if w != "unknown" else update.effective_user.first_name
     text = (
         "🐧💛🐧 *Welcome to Ra'El, " + name + "*\n\n"
-        "_Just the two of us — Eldor & Ra'no_\n\n"
-        "🎲 /question — Random question\n"
-        "🎯 /quiz — Couples quiz\n"
-        "📊 /mood — Log today's mood\n"
-        "📖 /journal — Add a memory\n"
-        "🌍 /goals — Life goals\n"
-        "📈 /moodchart — Mood history\n"
-        "🗂 /memories — Browse journal\n"
-        "💛 /us — Relationship stats\n"
+        "_Just the two of us - Eldor and Ra'no_\n\n"
+        "🎲 /question - Random question\n"
+        "🎯 /quiz - Couples quiz\n"
+        "📊 /mood - Log today's mood\n"
+        "📖 /journal - Add a memory\n"
+        "🌍 /goals - Life goals\n"
+        "📈 /moodchart - Mood history\n"
+        "🗂 /memories - Browse journal\n"
+        "💛 /us - Relationship stats\n"
     )
-    await update.message.reply_text(text, parse_mode="Markdown")
+    update.message.reply_text(text, parse_mode="Markdown")
 
-async def question(update, ctx):
+def question(update: Update, context: CallbackContext):
     keyboard = [[InlineKeyboardButton(t, callback_data="topic:" + t)] for t in QUESTIONS]
-    await update.message.reply_text("*Pick a topic:*", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    update.message.reply_text("*Pick a topic:*", parse_mode="Markdown",
+                              reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def topic_callback(update, ctx):
+def topic_callback(update: Update, context: CallbackContext):
     query = update.callback_query
-    await query.answer()
+    query.answer()
     topic = query.data[6:]
     q = random.choice(QUESTIONS[topic])
-    await query.edit_message_text("*" + topic + "*\n\n_" + q + "_\n\n💬 _Answer each other!_", parse_mode="Markdown")
+    query.edit_message_text("*" + topic + "*\n\n_" + q + "_\n\n💬 _Answer each other!_",
+                            parse_mode="Markdown")
 
-async def mood_cmd(update, ctx):
+def mood_cmd(update: Update, context: CallbackContext):
     username = update.effective_user.username or ""
     w = who(username)
     if w == "unknown":
-        await update.message.reply_text("I don't recognize your username.")
+        update.message.reply_text("I don't recognize your username.")
         return
-    keyboard = [[InlineKeyboardButton(MOOD_EMOJI[s], callback_data="mood:" + s + ":" + w) for s in ["1","2","3","4","5"]]]
+    keyboard = [[InlineKeyboardButton(MOOD_EMOJI[s], callback_data="mood:" + s + ":" + w)
+                 for s in ["1","2","3","4","5"]]]
     today = date.today().isoformat()
     existing = db_get_data("moods", today) or {}
     if w in existing:
-        msg = "You already logged " + MOOD_EMOJI[str(existing[w])] + " " + MOODS[str(existing[w])] + " today. Update it?"
+        msg = "You already logged " + MOOD_EMOJI[str(existing[w])] + " today. Update it?"
     else:
         msg = "*" + display_name(w) + ", how are you feeling today?*"
-    await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    update.message.reply_text(msg, parse_mode="Markdown",
+                              reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def mood_callback(update, ctx):
+def mood_callback(update: Update, context: CallbackContext):
     query = update.callback_query
-    await query.answer()
+    query.answer()
     parts = query.data.split(":")
     score = int(parts[1])
     w = parts[2]
@@ -211,54 +215,56 @@ async def mood_callback(update, ctx):
             sync = "😊 Slightly different vibes, that's okay."
         e_score = existing.get("eldor", score)
         r_score = existing.get("rano", score)
-        text = "*Mood logged* ✓\n\nEldor: " + MOOD_EMOJI[str(e_score)] + " " + MOODS[str(e_score)] + "\nRa'no: " + MOOD_EMOJI[str(r_score)] + " " + MOODS[str(r_score)] + "\n\n" + sync
+        text = ("*Mood logged* \n\nEldor: " + MOOD_EMOJI[str(e_score)] + " " + MOODS[str(e_score)] +
+                "\nRa'no: " + MOOD_EMOJI[str(r_score)] + " " + MOODS[str(r_score)] + "\n\n" + sync)
     else:
-        text = MOOD_EMOJI[str(score)] + " *" + MOODS[str(score)] + "* — logged ✓\n\nWaiting for " + display_name(other(w)) + " to log their mood..."
-    await query.edit_message_text(text, parse_mode="Markdown")
+        text = (MOOD_EMOJI[str(score)] + " *" + MOODS[str(score)] + "* - logged\n\n" +
+                "Waiting for " + display_name(other(w)) + " to log their mood...")
+    query.edit_message_text(text, parse_mode="Markdown")
 
-async def moodchart(update, ctx):
+def moodchart(update: Update, context: CallbackContext):
     try:
         data = supabase.table("moods").select("*").order("key", desc=True).limit(14).execute().data
     except:
         data = []
     if not data:
-        await update.message.reply_text("No mood data yet. Use /mood to start.")
+        update.message.reply_text("No mood data yet. Use /mood to start.")
         return
     lines = ["*📊 Last 14 days*\n"]
     for row in reversed(data):
         d = row["data"]
-        e = MOOD_EMOJI.get(str(d.get("eldor")), "—") if d.get("eldor") else "—"
-        r = MOOD_EMOJI.get(str(d.get("rano")), "—") if d.get("rano") else "—"
+        e = MOOD_EMOJI.get(str(d.get("eldor")), "-") if d.get("eldor") else "-"
+        r = MOOD_EMOJI.get(str(d.get("rano")), "-") if d.get("rano") else "-"
         lines.append("`" + row["key"][5:] + "` E: " + e + "  R: " + r)
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
-async def journal_cmd(update, ctx):
-    await update.message.reply_text("📖 *New Memory*\n\nGive this moment a title:", parse_mode="Markdown")
+def journal_cmd(update: Update, context: CallbackContext):
+    update.message.reply_text("📖 *New Memory*\n\nGive this moment a title:", parse_mode="Markdown")
     return JOURNAL_TITLE
 
-async def journal_title(update, ctx):
-    ctx.user_data["journal_title"] = update.message.text
-    await update.message.reply_text("Now write the memory — what happened, what it felt like:")
+def journal_title(update: Update, context: CallbackContext):
+    context.user_data["journal_title"] = update.message.text
+    update.message.reply_text("Now write the memory - what happened, what it felt like:")
     return JOURNAL_BODY
 
-async def journal_body(update, ctx):
-    ctx.user_data["journal_body"] = update.message.text
+def journal_body(update: Update, context: CallbackContext):
+    context.user_data["journal_body"] = update.message.text
     keyboard = [
         [InlineKeyboardButton(t, callback_data="tag:" + t) for t in ["First", "Milestone", "Favorite"]],
         [InlineKeyboardButton(t, callback_data="tag:" + t) for t in ["Funny", "Deep", "Everyday"]]
     ]
-    await update.message.reply_text("Tag this memory:", reply_markup=InlineKeyboardMarkup(keyboard))
+    update.message.reply_text("Tag this memory:", reply_markup=InlineKeyboardMarkup(keyboard))
     return JOURNAL_TAG
 
-async def journal_tag(update, ctx):
+def journal_tag(update: Update, context: CallbackContext):
     query = update.callback_query
-    await query.answer()
+    query.answer()
     tag = query.data[4:]
     w = who(update.effective_user.username or "")
     entry = {
         "id": int(datetime.now().timestamp()),
-        "title": ctx.user_data.get("journal_title", ""),
-        "body": ctx.user_data.get("journal_body", ""),
+        "title": context.user_data.get("journal_title", ""),
+        "body": context.user_data.get("journal_body", ""),
         "tag": tag,
         "by": w,
         "date": date.today().strftime("%d %b %Y"),
@@ -268,35 +274,36 @@ async def journal_tag(update, ctx):
     existing.insert(0, entry)
     db_set("journal", "entries", existing)
     body_preview = entry["body"][:100]
-    await query.edit_message_text(
-        "📖 *Memory saved* ✓\n\n*" + entry["title"] + "*\n_" + body_preview + "_\n\nTagged: " + tag + " · By " + display_name(w),
+    query.edit_message_text(
+        "📖 *Memory saved*\n\n*" + entry["title"] + "*\n_" + body_preview + "_\n\nTagged: " + tag + " - By " + display_name(w),
         parse_mode="Markdown"
     )
     return ConversationHandler.END
 
-async def memories(update, ctx):
+def memories(update: Update, context: CallbackContext):
     entries = db_get_data("journal", "entries") or []
     if not entries:
-        await update.message.reply_text("No memories yet. Use /journal to add your first.")
+        update.message.reply_text("No memories yet. Use /journal to add your first.")
         return
     lines = ["📖 *" + str(len(entries)) + " memories*\n"]
     for e in entries[:8]:
         by = "E" if e.get("by") == "eldor" else "R"
-        lines.append("[" + by + "] *" + e["title"] + "* · " + e.get("tag", "") + " · " + e.get("date", ""))
+        lines.append("[" + by + "] *" + e["title"] + "* - " + e.get("tag", "") + " - " + e.get("date", ""))
         if e.get("body"):
             preview = e["body"][:60] + ("..." if len(e["body"]) > 60 else "")
             lines.append("_" + preview + "_")
         lines.append("")
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
-async def goals_cmd(update, ctx):
+def goals_cmd(update: Update, context: CallbackContext):
     keyboard = [[InlineKeyboardButton(l, callback_data="goalcat:" + c)] for c, l in GOAL_CATEGORIES]
     keyboard.append([InlineKeyboardButton("📌 View all goals", callback_data="goalcat:view")])
-    await update.message.reply_text("*🌍 Life Goals*\n\nPick a category:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    update.message.reply_text("*🌍 Life Goals*\n\nPick a category:", parse_mode="Markdown",
+                              reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def goals_callback(update, ctx):
+def goals_callback(update: Update, context: CallbackContext):
     query = update.callback_query
-    await query.answer()
+    query.answer()
     if query.data == "goalcat:view":
         goals = db_get_data("goals", "main") or {}
         lines = ["*🌍 Life Goals*\n"]
@@ -311,10 +318,10 @@ async def goals_callback(update, ctx):
                 if g.get("note"):
                     lines.append("  Note: " + g["note"])
                 lines.append("")
-        await query.edit_message_text("\n".join(lines) or "No goals yet.", parse_mode="Markdown")
+        query.edit_message_text("\n".join(lines) or "No goals yet.", parse_mode="Markdown")
         return
     cat_id = query.data[8:]
-    ctx.user_data["goal_cat"] = cat_id
+    context.user_data["goal_cat"] = cat_id
     label = next(l for c, l in GOAL_CATEGORIES if c == cat_id)
     g = (db_get_data("goals", "main") or {}).get(cat_id, {})
     existing_text = ""
@@ -327,85 +334,87 @@ async def goals_callback(update, ctx):
          InlineKeyboardButton("Ra'no's view", callback_data="goalwho:rano")],
         [InlineKeyboardButton("Shared note", callback_data="goalwho:note")],
     ]
-    await query.edit_message_text("*" + label + "*" + existing_text + "\n\nWhose perspective?", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    query.edit_message_text("*" + label + "*" + existing_text + "\n\nWhose perspective?",
+                            parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def goalwho_callback(update, ctx):
+def goalwho_callback(update: Update, context: CallbackContext):
     query = update.callback_query
-    await query.answer()
+    query.answer()
     w = query.data[8:]
-    ctx.user_data["goal_who"] = w
+    context.user_data["goal_who"] = w
     label = "Eldor" if w == "eldor" else ("Ra'no" if w == "rano" else "shared note")
-    await query.edit_message_text("Type " + label + "'s perspective:")
+    query.edit_message_text("Type " + label + "'s perspective:")
     return GOAL_TEXT
 
-async def goal_text_handler(update, ctx):
-    cat_id = ctx.user_data.get("goal_cat")
-    w = ctx.user_data.get("goal_who")
+def goal_text_handler(update: Update, context: CallbackContext):
+    cat_id = context.user_data.get("goal_cat")
+    w = context.user_data.get("goal_who")
     goals = db_get_data("goals", "main") or {}
     if cat_id not in goals:
         goals[cat_id] = {}
     goals[cat_id][w] = update.message.text
     db_set("goals", "main", goals)
     label = next(l for c, l in GOAL_CATEGORIES if c == cat_id)
-    await update.message.reply_text("Saved under *" + label + "*", parse_mode="Markdown")
+    update.message.reply_text("Saved under *" + label + "*", parse_mode="Markdown")
     return ConversationHandler.END
 
-async def quiz_cmd(update, ctx):
-    ctx.user_data["quiz_answers"] = []
-    ctx.user_data["quiz_idx"] = 0
+def quiz_cmd(update: Update, context: CallbackContext):
+    context.user_data["quiz_answers"] = []
+    context.user_data["quiz_idx"] = 0
     q, w = QUIZ_QUESTIONS[0]
-    await update.message.reply_text(
-        "🎯 *Couples Quiz*\n\n*" + display_name(w) + "* — answer this about yourself:\n\n_" + q + "_\n\n_(1/" + str(len(QUIZ_QUESTIONS)) + ")_",
+    update.message.reply_text(
+        "🎯 *Couples Quiz*\n\n*" + display_name(w) + "* - answer this about yourself:\n\n_" + q + "_\n\n_(1/" + str(len(QUIZ_QUESTIONS)) + ")_",
         parse_mode="Markdown"
     )
     return QUIZ_ANSWER
 
-async def quiz_answer(update, ctx):
-    idx = ctx.user_data["quiz_idx"]
+def quiz_answer(update: Update, context: CallbackContext):
+    idx = context.user_data["quiz_idx"]
     q, w = QUIZ_QUESTIONS[idx]
-    ctx.user_data["quiz_answers"].append({"q": q, "who": w, "answer": update.message.text})
+    context.user_data["quiz_answers"].append({"q": q, "who": w, "answer": update.message.text})
     idx += 1
-    ctx.user_data["quiz_idx"] = idx
+    context.user_data["quiz_idx"] = idx
     if idx < len(QUIZ_QUESTIONS):
         q2, w2 = QUIZ_QUESTIONS[idx]
-        await update.message.reply_text(
-            "*" + display_name(w2) + "* — answer this:\n\n_" + q2 + "_\n\n_(" + str(idx+1) + "/" + str(len(QUIZ_QUESTIONS)) + ")_",
+        update.message.reply_text(
+            "*" + display_name(w2) + "* - answer this:\n\n_" + q2 + "_\n\n_(" + str(idx+1) + "/" + str(len(QUIZ_QUESTIONS)) + ")_",
             parse_mode="Markdown"
         )
         return QUIZ_ANSWER
-    ctx.user_data["quiz_idx"] = 0
-    ctx.user_data["quiz_guesses"] = []
-    ctx.user_data["quiz_score"] = 0
-    a = ctx.user_data["quiz_answers"][0]
-    await update.message.reply_text(
+    context.user_data["quiz_idx"] = 0
+    context.user_data["quiz_guesses"] = []
+    context.user_data["quiz_score"] = 0
+    a = context.user_data["quiz_answers"][0]
+    update.message.reply_text(
         "All answered! Now *" + display_name(other(a["who"])) + "* guesses.\n\n*" + display_name(a["who"]) + "* was asked:\n_" + a["q"] + "_\n\nWhat did they say?",
         parse_mode="Markdown"
     )
     return QUIZ_GUESS
 
-async def quiz_guess(update, ctx):
-    idx = ctx.user_data["quiz_idx"]
-    answers = ctx.user_data["quiz_answers"]
+def quiz_guess(update: Update, context: CallbackContext):
+    idx = context.user_data["quiz_idx"]
+    answers = context.user_data["quiz_answers"]
     current = answers[idx]
     guess = update.message.text
     correct = current["answer"].lower()
     close = (guess.lower() in correct or correct in guess.lower() or
              any(word in correct for word in guess.lower().split() if len(word) > 3))
     if close:
-        ctx.user_data["quiz_score"] += 1
-    ctx.user_data["quiz_guesses"].append({"q": current["q"], "who": current["who"], "answer": current["answer"], "guess": guess, "correct": close})
+        context.user_data["quiz_score"] += 1
+    context.user_data["quiz_guesses"].append({"q": current["q"], "who": current["who"],
+                                               "answer": current["answer"], "guess": guess, "correct": close})
     idx += 1
-    ctx.user_data["quiz_idx"] = idx
+    context.user_data["quiz_idx"] = idx
     if idx < len(answers):
         a = answers[idx]
         result = "Close!" if close else "They said: " + current["answer"]
         mark = "✅" if close else "❌"
-        await update.message.reply_text(
-            mark + " " + result + "\n\n*" + display_name(other(a["who"])) + "* — what did *" + display_name(a["who"]) + "* say?\n\n_" + a["q"] + "_",
+        update.message.reply_text(
+            mark + " " + result + "\n\n*" + display_name(other(a["who"])) + "* - what did *" + display_name(a["who"]) + "* say?\n\n_" + a["q"] + "_",
             parse_mode="Markdown"
         )
         return QUIZ_GUESS
-    score = ctx.user_data["quiz_score"]
+    score = context.user_data["quiz_score"]
     total = len(answers)
     pct = round(score / total * 100)
     if pct >= 80:
@@ -413,20 +422,20 @@ async def quiz_guess(update, ctx):
         msg = "You know each other deeply 💛"
     elif pct >= 50:
         emoji = "😊"
-        msg = "Pretty well — keep learning each other 🌊"
+        msg = "Pretty well - keep learning each other 🌊"
     else:
         emoji = "🌱"
-        msg = "Room to grow — that's what this is for 🌱"
-    lines = [emoji + " *" + str(pct) + "% — " + msg + "*\n"]
-    for g in ctx.user_data["quiz_guesses"]:
+        msg = "Room to grow - that's what this is for 🌱"
+    lines = [emoji + " *" + str(pct) + "% - " + msg + "*\n"]
+    for g in context.user_data["quiz_guesses"]:
         mark = "✅" if g["correct"] else "❌"
         lines.append(mark + " _" + g["q"] + "_")
         lines.append("  Answer: " + g["answer"])
         lines.append("  Guess: " + g["guess"] + "\n")
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    update.message.reply_text("\n".join(lines), parse_mode="Markdown")
     return ConversationHandler.END
 
-async def us(update, ctx):
+def us(update: Update, context: CallbackContext):
     try:
         mood_rows = supabase.table("moods").select("*").execute().data or []
         entries = db_get_data("journal", "entries") or []
@@ -443,54 +452,58 @@ async def us(update, ctx):
         mood_line = "Eldor avg: " + str(round(ae, 1)) + "/5  Ra'no avg: " + str(round(ar, 1)) + "/5"
     else:
         mood_line = "No mood data yet"
-    await update.message.reply_text(
-        "🐧💛🐧 *Eldor & Ra'no*\n\n📊 Mood days: *" + str(days) + "*\n_" + mood_line + "_\n\n📖 Memories: *" + str(len(entries)) + "*\n🌍 Goals aligned: *" + str(filled) + "/" + str(len(GOAL_CATEGORIES)) + "*\n\n_Just the two of you. Keep going._ 💛",
+    update.message.reply_text(
+        "🐧💛🐧 *Eldor and Ra'no*\n\n📊 Mood days: *" + str(days) + "*\n_" + mood_line + "_\n\n📖 Memories: *" + str(len(entries)) + "*\n🌍 Goals aligned: *" + str(filled) + "/" + str(len(GOAL_CATEGORIES)) + "*\n\n_Just the two of you. Keep going._ 💛",
         parse_mode="Markdown"
     )
 
-async def cancel(update, ctx):
-    await update.message.reply_text("Cancelled.")
+def cancel(update: Update, context: CallbackContext):
+    update.message.reply_text("Cancelled.")
     return ConversationHandler.END
 
 def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("question", question))
-    app.add_handler(CommandHandler("moodchart", moodchart))
-    app.add_handler(CommandHandler("memories", memories))
-    app.add_handler(CommandHandler("goals", goals_cmd))
-    app.add_handler(CommandHandler("us", us))
-    app.add_handler(CommandHandler("mood", mood_cmd))
-    app.add_handler(CallbackQueryHandler(topic_callback, pattern="^topic:"))
-    app.add_handler(CallbackQueryHandler(mood_callback, pattern="^mood:"))
-    app.add_handler(CallbackQueryHandler(goals_callback, pattern="^goalcat:"))
-    app.add_handler(CallbackQueryHandler(goalwho_callback, pattern="^goalwho:"))
-    app.add_handler(ConversationHandler(
+    updater = Updater(BOT_TOKEN)
+    dp = updater.dispatcher
+
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("question", question))
+    dp.add_handler(CommandHandler("moodchart", moodchart))
+    dp.add_handler(CommandHandler("memories", memories))
+    dp.add_handler(CommandHandler("goals", goals_cmd))
+    dp.add_handler(CommandHandler("us", us))
+    dp.add_handler(CommandHandler("mood", mood_cmd))
+    dp.add_handler(CallbackQueryHandler(topic_callback, pattern="^topic:"))
+    dp.add_handler(CallbackQueryHandler(mood_callback, pattern="^mood:"))
+    dp.add_handler(CallbackQueryHandler(goals_callback, pattern="^goalcat:"))
+    dp.add_handler(CallbackQueryHandler(goalwho_callback, pattern="^goalwho:"))
+    dp.add_handler(ConversationHandler(
         entry_points=[CommandHandler("journal", journal_cmd)],
         states={
-            JOURNAL_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, journal_title)],
-            JOURNAL_BODY: [MessageHandler(filters.TEXT & ~filters.COMMAND, journal_body)],
+            JOURNAL_TITLE: [MessageHandler(Filters.text & ~Filters.command, journal_title)],
+            JOURNAL_BODY: [MessageHandler(Filters.text & ~Filters.command, journal_body)],
             JOURNAL_TAG: [CallbackQueryHandler(journal_tag, pattern="^tag:")],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     ))
-    app.add_handler(ConversationHandler(
+    dp.add_handler(ConversationHandler(
         entry_points=[CommandHandler("quiz", quiz_cmd)],
         states={
-            QUIZ_ANSWER: [MessageHandler(filters.TEXT & ~filters.COMMAND, quiz_answer)],
-            QUIZ_GUESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, quiz_guess)],
+            QUIZ_ANSWER: [MessageHandler(Filters.text & ~Filters.command, quiz_answer)],
+            QUIZ_GUESS: [MessageHandler(Filters.text & ~Filters.command, quiz_guess)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     ))
-    app.add_handler(ConversationHandler(
+    dp.add_handler(ConversationHandler(
         entry_points=[CallbackQueryHandler(goalwho_callback, pattern="^goalwho:")],
         states={
-            GOAL_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, goal_text_handler)],
+            GOAL_TEXT: [MessageHandler(Filters.text & ~Filters.command, goal_text_handler)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     ))
+
     print("Ra'El bot is running...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    updater.start_polling()
+    updater.idle()
 
 if __name__ == "__main__":
     main()
